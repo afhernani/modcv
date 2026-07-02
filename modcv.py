@@ -25,15 +25,18 @@ __all__ = ('MyVideoCapture')
 
 logging.basicConfig(level=logging.DEBUG)
 
-# CORREGIDO: Calcular ruta de seting.ini de forma segura
-if getattr(sys, 'frozen', False):
-    # Si está compilado con PyInstaller, usar la carpeta del .exe
-    base_dir = os.path.dirname(sys.executable)
-else:
-    # Si está en desarrollo, usar la carpeta del script principal
-    base_dir = os.path.dirname(os.path.abspath(__file__))
+def get_base_path():
+    """Obtiene la ruta base correcta según si es ejecutable o script."""
+    if getattr(sys, 'frozen', False):
+        # Estamos en un ejecutable de PyInstaller
+        return sys._MEIPASS
+    else:
+        # Estamos en modo desarrollo (python modcv.py)
+        return os.path.dirname(os.path.abspath(__file__))
 
-CONFIG_FILE = os.path.join(base_dir, "config.ini")
+BASE_PATH = get_base_path()
+
+CONFIG_FILE = os.path.join(BASE_PATH, "config.ini")
 
 def cargar_config():
     config = configparser.ConfigParser()
