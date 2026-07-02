@@ -310,9 +310,7 @@ class App:
         """Configura el icono de la ventana usando un archivo PNG."""
         try:
             # Ruta relativa al directorio del script
-            import os
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-            icon_path = os.path.join(base_dir, 'assets', 'modcv.png')
+            icon_path = os.path.join(BASE_PATH, 'assets', 'modcv.png')
             
             if os.path.exists(icon_path):
                 icon_image = Image.open(icon_path)
