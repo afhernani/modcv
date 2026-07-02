@@ -229,6 +229,7 @@ class App:
         self.window = window
         self.window_title = window_title
         self.window.title(window_title)
+        self._set_window_icon()
         self.video_source = video_source
         self.stop = False
         self.v_time = tk.DoubleVar()
@@ -300,7 +301,44 @@ class App:
         self.update()
         if run_mainloop:
             self.window.mainloop()
+
+
+    def _set_window_icon(self):
+        """Configura el icono de la ventana usando un archivo PNG."""
+        try:
+            # Ruta relativa al directorio del script
+            import os
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            icon_path = os.path.join(base_dir, 'assets', 'modcv.png')
+            
+            if os.path.exists(icon_path):
+                icon_image = Image.open(icon_path)
+                # Crear PhotoImage desde PIL
+                self.window_icon = ImageTk.PhotoImage(icon_image)
+                self.window.iconphoto(True, self.window_icon)
+                logging.info(f"Icono cargado: {icon_path}")
+            else:
+                logging.warning(f"Icono no encontrado: {icon_path}")
+                self._set_default_icon()
+        except Exception as e:
+            logging.error(f"Error al cargar el icono: {e}")
+            self._set_default_icon()
     
+    def _set_default_icon(self):
+        """Icono por defecto generado programáticamente (fallback)."""
+        try:
+            # Creamos un icono simple de 64x64 con un círculo azul
+            icon = Image.new('RGB', (64, 64), color=(30, 144, 255))
+            # Dibujar un triángulo de "play" blanco
+            from PIL import ImageDraw
+            draw = ImageDraw.Draw(icon)
+            draw.polygon([(20, 15), (20, 49), (50, 32)], fill='white')
+            self.window_icon = ImageTk.PhotoImage(icon)
+            self.window.iconphoto(True, self.window_icon)
+            logging.info("Usando icono por defecto")
+        except Exception as e:
+            logging.error(f"No se pudo crear el icono por defecto: {e}")
+
     def handle_resize(self, ev):
         logging.info(f"resize: {self.window.geometry()}")
         logging.info(f"canvas: {self.canvas.winfo_height()}, {self.canvas.winfo_width()}")
