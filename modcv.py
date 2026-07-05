@@ -12,9 +12,15 @@ from PIL import Image, ImageTk
 import time
 import datetime
 import logging, configparser
-
 from lark import logger
 
+# Importación segura de tkinterdnd2
+try:
+    from tkinterdnd2 import TkinterDnD2, DND_FILES
+except ImportError:
+    print("Error: Necesitas instalar la librería tkinterdnd2.")
+    print("Ejecuta: pip install tkinterdnd2")
+    sys.exit(1)
 
 __author__ = 'Hernani Aleman Ferraz'
 __email__ = 'afhernani@gmail.com'
@@ -250,6 +256,10 @@ class App:
         self.all_time.set(self.vid.seconds)
         self.canvas = tk.Canvas(window, width = self.vid.width, height = self.vid.height)
         self.canvas.pack()
+
+        # ✅ REGISTRO DRAG & DROP
+        self.canvas.drop_target_register(DND_FILES)
+        self.canvas.dnd_bind('<<Drop>>', self.on_drop)
 
         # Frame contenedor
         self.frame = tk.Frame(self.window)
