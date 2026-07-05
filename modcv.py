@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: UTF-8 -*-
 
-import os, sys
+import os, sys, urllib.parse
 import tkinter as tk
 from tkinter import Variable, ttk
 from tkinter.constants import LEFT, RIGHT, TRUE
@@ -304,7 +304,7 @@ class App:
         self.delay = max(1, int(1000 / self.vid.fps))
         logging.info(f"Video FPS: {self.vid.fps}, Calculated delay: {self.delay}ms")
 
-        # Añade esto al final del __init__:
+        # Añade esto al final:
         self.gif_thread = None
         self.is_generating_gif = False
         self.status_var = tk.StringVar(value="Listo")
@@ -454,6 +454,51 @@ class App:
         self.stop=False
         self.window.after(self.delay, self.update)
 
+    # MÉTODO REUTILIZABLE PARA CARGAR VIDEO (Botón + Drop)
+    def _load_video(self, filepath):
+        if not filepath or not os.path.exists(filepath):
+            return
+        valid_ext = ('.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v')
+        if not filepath.lower().endswith(valid_ext):
+            showerror("Error", "Formato no soportado. Arrastra un archivo de video válido.")
+            return
+            
+        logging.info(f"Cargando video: {filepath}")
+        self.vid.release()
+        guardar_config(os.path.dirname(filepath))
+        self.video_source = filepath
+        try:
+            self.vid = MyVideoCapture(self.video_source)
+        except ValueError as e:
+            showerror("Error", str(e))
+            return
+
+        self.canvas.configure(width=self.vid.width, height=self.vid.height)
+        self.all_time.set(self.vid.seconds)
+        self.slider.configure(to=self.all_time.get())
+        self.delay = max(1, int(1000 / self.vid.fps))
+        self.v_time.set(0)
+        self.stop = False
+        self.btn_stop['text'] = 'II'
+        self.window.after(self.delay, self.update)
+
+    # MANEJADOR DRAG & DROP
+    def on_drop(self, event):
+        # Limpieza robusta de rutas (Windows {}, Linux/Mac file://, espacios codificados)
+        raw_paths = self.window.tk.splitlist(event.data)
+        clean_paths = []
+        for p in raw_paths:
+            if p.startswith('{') and p.endswith('}'): p = p[1:-1]
+            if p.startswith('file://'): p = p[7:]
+            clean_paths.append(urllib.parse.unquote(p))
+            
+        for path in clean_paths:
+            if path.lower().endswith(('.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v')):
+                self._load_video(path)
+                break
+        else:
+            showerror("Error", "No se encontró ningún archivo de video válido en los elementos arrastrados.")
+
 
     def _generate_gif(self):
         self.vid.save_gif_file(namefile=self.video_source)
@@ -527,5 +572,5 @@ class App:
 
 if __name__ == '__main__':
     # Create a window and pass it to the Application object
-    App(tk.Tk(), "Tkinter and OpenCV", 0)  # 0 para usar la webcam por defecto
+    App(TkinterDnD2.Tk(), "Tkinter and OpenCV", 0)  # 0 para usar la webcam por defecto
     logging.info("End of program")
