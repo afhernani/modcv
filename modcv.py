@@ -146,7 +146,7 @@ class MyVideoCapture:
         else:
             return False
 
-    def save_gif_file(self, namefile="smiling", duration=0.8):
+    def save_gif_file(self, namefile="smiling", duration=0.8, nft=20):
         """Crea un archivo GIF a partir de la fuente de video sin bloquear la interfaz de usuario. 
         Se extraen n frames del video y se guardan en un archivo GIF.
         Args:"""
@@ -164,7 +164,7 @@ class MyVideoCapture:
 
 
         logging.info("Extrayendo frames para el GIF ...")
-        ntf = 20  # Número de frames a extraer
+        ntf = nft  # Número de frames a extraer
         rate_sec = round((total_sec / (ntf + 1)), 3)
         sec = rate_sec
 
