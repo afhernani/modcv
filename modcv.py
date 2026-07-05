@@ -130,9 +130,9 @@ class MyVideoCapture:
                 logging.info(f'valor ret: {ret}')
                 self.set_poss(0) # posicionamos al principio
                 return (ret, None)
-        else:
-            return (False, None)
-            # raise ValueError(f"not open video source: {self.video_source}")
+        
+        return (False, None)
+        # raise ValueError(f"not open video source: {self.video_source}")
 
     def __get_frame_sec(self, sec):
         '''devuelve true/false, true, guarda imagen de la secuencia sec,
