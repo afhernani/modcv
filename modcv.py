@@ -101,6 +101,9 @@ class MyVideoCapture:
         if self.vid.isOpened():
             self.n_frames = self.vid.get(cv2.CAP_PROP_FRAME_COUNT)
             self.fps = int(self.vid.get(cv2.CAP_PROP_FPS))
+            if self.fps == 0:
+                logging.warning("FPS es 0, estableciendo a 25 por defecto")
+                self.fps = 25
             self.seconds = round((self.n_frames / self.fps), 3)
             self.time = str(datetime.timedelta(seconds=self.seconds))
         logger.info(f"Video info: {self.n_frames} frames, {self.fps} fps, {self.seconds} seconds, duration: {self.time}")
@@ -269,11 +272,15 @@ class App:
         # Create a canvas that can fit the above video source size
         self.all_time.set(self.vid.seconds)
         self.canvas = tk.Canvas(window, width = self.vid.width, height = self.vid.height)
-        self.canvas.pack()
+        self.canvas.pack(fill=tk.BOTH, expand=True) # ojo aqui
 
-        # ✅ REGISTRO DRAG & DROP
-        self.canvas.drop_target_register(DND_FILES)
-        self.canvas.dnd_bind('<<Drop>>', self.on_drop)
+        # [DnD] Registrar el canvas como zona de drop
+        if DND_AVAILABLE:
+            self.canvas.drop_target_register(DND_FILES)
+            self.canvas.dnd_bind('<<Drop>>', self._on_drop)
+            self.canvas.dnd_bind('<<DragEnter>>', self._on_drag_enter)
+            self.canvas.dnd_bind('<<DragLeave>>', self._on_drag_leave)
+            logging.info("Canvas registrado como zona de drop")
 
         # Frame contenedor
         self.frame = tk.Frame(self.window)
@@ -468,52 +475,6 @@ class App:
         self.stop=False
         self.window.after(self.delay, self.update)
 
-    # MÉTODO REUTILIZABLE PARA CARGAR VIDEO (Botón + Drop)
-    def _load_video(self, filepath):
-        if not filepath or not os.path.exists(filepath):
-            return
-        valid_ext = ('.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v')
-        if not filepath.lower().endswith(valid_ext):
-            showerror("Error", "Formato no soportado. Arrastra un archivo de video válido.")
-            return
-            
-        logging.info(f"Cargando video: {filepath}")
-        self.vid.release()
-        guardar_config(os.path.dirname(filepath))
-        self.video_source = filepath
-        try:
-            self.vid = MyVideoCapture(self.video_source)
-        except ValueError as e:
-            showerror("Error", str(e))
-            return
-
-        self.canvas.configure(width=self.vid.width, height=self.vid.height)
-        self.all_time.set(self.vid.seconds)
-        self.slider.configure(to=self.all_time.get())
-        self.delay = max(1, int(1000 / self.vid.fps))
-        self.v_time.set(0)
-        self.stop = False
-        self.btn_stop['text'] = 'II'
-        self.window.after(self.delay, self.update)
-
-    # MANEJADOR DRAG & DROP
-    def on_drop(self, event):
-        # Limpieza robusta de rutas (Windows {}, Linux/Mac file://, espacios codificados)
-        raw_paths = self.window.tk.splitlist(event.data)
-        clean_paths = []
-        for p in raw_paths:
-            if p.startswith('{') and p.endswith('}'): p = p[1:-1]
-            if p.startswith('file://'): p = p[7:]
-            clean_paths.append(urllib.parse.unquote(p))
-            
-        for path in clean_paths:
-            if path.lower().endswith(('.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v')):
-                self._load_video(path)
-                break
-        else:
-            showerror("Error", "No se encontró ningún archivo de video válido en los elementos arrastrados.")
-
-
     def _generate_gif(self):
         self.vid.save_gif_file(namefile=self.video_source)
 
@@ -545,7 +506,6 @@ class App:
             # Actualizar el dalay basando en los nuevos fps del video abierto.
             self.delay = max(1, int(1000 / self.vid.fps))
             logging.info(f"new fps: {self.vid.fps}, delay: {self.delay}")
-            
 
     def update(self):
         """Método de actualizacion con sincronizacion precisa de fps del video."""
@@ -583,8 +543,107 @@ class App:
         # Programamos el siguiente frame
         self.window.after(int(adjusted_delay), self.update)
 
+    # ==================== [DnD] Métodos de Drag & Drop ====================
+    def _on_drag_enter(self, event):
+        """Feedback visual cuando el cursor entra con un archivo."""
+        self.canvas.configure(bg='#2a4a6a')
+        self.status_var.set("⤵ Suelta para abrir el video")
+
+    def _on_drag_leave(self, event):
+        """Restaura el canvas cuando el cursor sale sin soltar."""
+        self.canvas.configure(bg=self._canvas_original_bg)
+        self.status_var.set("Listo" + (" | Arrastra un video aquí" if DND_AVAILABLE else ""))
+
+    def _on_drop(self, event):
+        """Maneja el evento de soltar un archivo sobre el canvas."""
+        # Restaurar el canvas
+        self.canvas.configure(bg=self._canvas_original_bg)
+        
+        # [DnD] TkinterDnD2 devuelve la ruta con formato específico según el OS
+        # En Windows puede venir con llaves o espacios escapados
+        file_path = event.data.strip()
+        
+        # Limpiar formato: quitar llaves si existen (Windows a veces las añade)
+        if file_path.startswith('{') and file_path.endswith('}'):
+            file_path = file_path[1:-1]
+        
+        # Si hay múltiples archivos (separados por espacios en algunos OS), tomar el primero
+        # Nota: las rutas con espacios en Linux/Mac pueden venir separadas por espacios
+        # Usamos heurística: si existe como archivo completo, lo usamos; si no, probamos dividir
+        if not os.path.isfile(file_path):
+            # Intentar dividir por espacios (formato POSIX)
+            partes = event.data.split()
+            for parte in partes:
+                parte = parte.strip()
+                if parte.startswith('{') and parte.endswith('}'):
+                    parte = parte[1:-1]
+                if os.path.isfile(parte):
+                    file_path = parte
+                    break
+        
+        logging.info(f"[DnD] Archivo soltado: {file_path}")
+        
+        # Validar que sea un video
+        if not es_video_valido(file_path):
+            showerror("Archivo no válido", 
+                      f"El archivo no parece ser un video soportado:\n{file_path}\n\n"
+                      f"Extensiones soportadas: {', '.join(sorted(VIDEO_EXTENSIONS))}")
+            self.status_var.set("❌ Archivo no válido")
+            return
+        
+        # Abrir el video
+        self._open_video_file(file_path)
+
+    def _open_video_file(self, filename):
+        """Abre un archivo de video (lógica compartida entre openshow y DnD)."""
+        if not filename or not os.path.isfile(filename):
+            return False
+        
+        try:
+            logging.info(f"Abriendo archivo: {filename}")
+            # Liberar recursos del video actual
+            self.vid.release()
+            guardar_config(os.path.dirname(filename))
+            self.video_source = filename
+            self.vid = MyVideoCapture(self.video_source)
+            
+            # Actualizar canvas
+            self.canvas.configure(width=self.vid.width, height=self.vid.height)
+            self.all_time.set(self.vid.seconds)
+            self.slider.configure(to=self.all_time.get())
+            self.v_time.set(0)
+            
+            # Actualizar delay
+            self.delay = max(1, int(1000 / self.vid.fps))
+            logging.info(f"Nuevo video: {self.vid.fps} fps, delay: {self.delay}ms")
+            
+            # Reanudar reproducción
+            self.btn_stop['text'] = 'II'
+            self.stop = False
+            
+            self.status_var.set(f"▶ {os.path.basename(filename)}")
+            self.window.title(f"{self.window_title} - {os.path.basename(filename)}")
+            
+            # Reiniciar el loop de actualización
+            self.window.after(self.delay, self.update)
+            return True
+        except Exception as e:
+            logging.error(f"Error al abrir video: {e}")
+            showerror("Error", f"No se pudo abrir el video:\n{filename}\n\n{e}")
+            self.status_var.set("❌ Error al abrir video")
+            return False
+    # =======================================================================
+
 
 if __name__ == '__main__':
     # Create a window and pass it to the Application object
-    App(TkinterDnD2.Tk(), "Tkinter and OpenCV", 0)  # 0 para usar la webcam por defecto
+    # [DnD] Usar TkinterDnD2 si está disponible, sino fallback a tk.Tk()
+    if DND_AVAILABLE:
+        root = TkinterDnD.Tk()
+        logging.info("Ventana creada con soporte Drag & Drop")
+    else:
+        root = tk.Tk()
+        logging.info("Ventana creada sin soporte Drag & Drop (tkinterdnd2 no disponible)")
+    
+    App(root, "Tkinter and OpenCV", 0)  # 0 para usar la webcam por defecto
     logging.info("End of program")
