@@ -101,9 +101,9 @@ class MyVideoCapture:
         if self.vid.isOpened():
             self.n_frames = self.vid.get(cv2.CAP_PROP_FRAME_COUNT)
             self.fps = int(self.vid.get(cv2.CAP_PROP_FPS))
-            if self.fps == 0:
-                logging.warning("FPS es 0, estableciendo a 25 por defecto")
-                self.fps = 25
+            #if self.fps == 0:
+            #    logging.warning("FPS es 0, estableciendo a 25 por defecto")
+            #    self.fps = 25
             self.seconds = round((self.n_frames / self.fps), 3)
             self.time = str(datetime.timedelta(seconds=self.seconds))
         logger.info(f"Video info: {self.n_frames} frames, {self.fps} fps, {self.seconds} seconds, duration: {self.time}")
@@ -272,8 +272,10 @@ class App:
         # Create a canvas that can fit the above video source size
         self.all_time.set(self.vid.seconds)
         self.canvas = tk.Canvas(window, width = self.vid.width, height = self.vid.height)
-        self.canvas.pack(fill=tk.BOTH, expand=True) # ojo aqui
-
+        #self.canvas.pack(fill=tk.BOTH, expand=True) # ojo aqui
+        self.canvas.pack()
+        # Guardar el color original del canvas
+        self._canvas_original_bg = self.canvas.cget('bg')
         # [DnD] Registrar el canvas como zona de drop
         if DND_AVAILABLE:
             self.canvas.drop_target_register(DND_FILES)
@@ -588,7 +590,7 @@ class App:
             showerror("Archivo no válido", 
                       f"El archivo no parece ser un video soportado:\n{file_path}\n\n"
                       f"Extensiones soportadas: {', '.join(sorted(VIDEO_EXTENSIONS))}")
-            self.status_var.set("❌ Archivo no válido")
+            self.status_var.set("Archivo no válido")
             return
         
         # Abrir el video
@@ -618,19 +620,20 @@ class App:
             logging.info(f"Nuevo video: {self.vid.fps} fps, delay: {self.delay}ms")
             
             # Reanudar reproducción
-            self.btn_stop['text'] = 'II'
-            self.stop = False
+            #self.btn_stop['text'] = 'II'
+            #self.stop = False
             
-            self.status_var.set(f"▶ {os.path.basename(filename)}")
+            #self.status_var.set(f"> {os.path.basename(filename)}")
+            #self.status_var.set(f">>")
             self.window.title(f"{self.window_title} - {os.path.basename(filename)}")
             
             # Reiniciar el loop de actualización
-            self.window.after(self.delay, self.update)
+            #self.window.after(self.delay, self.update)
             return True
         except Exception as e:
             logging.error(f"Error al abrir video: {e}")
             showerror("Error", f"No se pudo abrir el video:\n{filename}\n\n{e}")
-            self.status_var.set("❌ Error al abrir video")
+            self.status_var.set("Error al abrir video")
             return False
     # =======================================================================
 
