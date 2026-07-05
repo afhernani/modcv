@@ -14,14 +14,6 @@ import datetime
 import logging, configparser
 from lark import logger
 
-# Importación segura de tkinterdnd2
-try:
-    from tkinterdnd2 import TkinterDnD2, DND_FILES
-except ImportError:
-    print("Error: Necesitas instalar la librería tkinterdnd2.")
-    print("Ejecuta: pip install tkinterdnd2")
-    sys.exit(1)
-
 __author__ = 'Hernani Aleman Ferraz'
 __email__ = 'afhernani@gmail.com'
 __apply__ = 'modcv - opencv'
@@ -30,6 +22,17 @@ __version__ = '0'
 __all__ = ('MyVideoCapture')
 
 logging.basicConfig(level=logging.DEBUG)
+
+# [DnD] Import condicional de tkinterdnd2 con fallback
+try:
+    from tkinterdnd2 import TkinterDnD, DND_FILES
+    DND_AVAILABLE = True
+    logging.info("tkinterdnd2 disponible - Drag & Drop habilitado")
+except ImportError:
+    DND_AVAILABLE = False
+    TkinterDnD = None
+    logging.warning("tkinterdnd2 no instalado - Drag & Drop deshabilitado. " \
+        "Instalar con: pip install tkinterdnd2")
 
 def get_base_path():
     """Obtiene la ruta base correcta según si es ejecutable o script."""
@@ -44,6 +47,9 @@ BASE_PATH = get_base_path()
 
 CONFIG_FILE = os.path.join(BASE_PATH, "config.ini")
 
+# [DnD] Extensiones de video soportadas
+VIDEO_EXTENSIONS = {'.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.mpeg', '.mpg', '.3gp'}
+
 def cargar_config():
     config = configparser.ConfigParser()
     config.read(CONFIG_FILE)
@@ -54,6 +60,14 @@ def guardar_config(carpeta):
     config["Setings"] = {"dirpathmovies": carpeta}
     with open(CONFIG_FILE, "w") as f:
         config.write(f)
+
+def es_video_valido(ruta):
+    """Verifica si la ruta corresponde a un archivo de video válido."""
+    if not ruta or not os.path.isfile(ruta):
+        return False
+    _, ext = os.path.splitext(ruta)
+    return ext.lower() in VIDEO_EXTENSIONS
+
 
 class MyVideoCapture:
     """Captura de video con OpenCV, para usar en Tkinter. """
