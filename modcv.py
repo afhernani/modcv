@@ -13,6 +13,8 @@ import time
 import datetime
 import logging, configparser
 from lark import logger
+from numpy import indices
+from framesdialogo import FramesDialog
 
 __author__ = 'Hernani Aleman Ferraz'
 __email__ = 'afhernani@gmail.com'
@@ -173,7 +175,7 @@ class MyVideoCapture:
         """Crea un archivo GIF a partir de la fuente de video sin bloquear la interfaz de usuario. 
         Se extraen n frames del video y se guardan en un archivo GIF.
         Args:"""
-        logging.info("[save_gif_file] Extracting frames from video...")
+        logging.info(f"[save_gif_file] Extracting frames from video...{nft}")
         self.frames.clear()
         # Usamos una instancia Temporal para evitar conflictos con la reproducción del video en la interfaz de usuario.
         temp_vid = cv2.VideoCapture(self.video_source)
@@ -185,12 +187,25 @@ class MyVideoCapture:
         fps = int(temp_vid.get(cv2.CAP_PROP_FPS))
         total_sec = n_frames / fps if fps > 0 else 10
 
-
+        '''
         logging.info("Extrayendo frames para el GIF ...")
         ntf = nft  # Número de frames a extraer
         rate_sec = round((total_sec / (ntf + 1)), 3)
-        sec = rate_sec
+        sec = int(rate_sec)'''
+        # calculo indice distribuido de frames a extraer
+        if nft >= n_frames:
+            indices = list(range(n_frames))
+            logging.info(f"Video tiene solo {n_frames} frames, extrayendo todos: {len(indices)}")
+        else:
+            step = n_frames / (nft - 1)
+            indices = [int(i*step) for i in range(nft)]
+        
+        logging.info(f"Video tiene {n_frames} frames")
+        logging.info(f"Índices a extraer: {len(indices)} frames")
+        logging.info(f"Primeros 5 índices: {indices[:5]}")
+        logging.info(f"Últimos 5 índices: {indices[-5:]}")
 
+        '''
         while sec <= total_sec:
             temp_vid.set(cv2.CAP_PROP_POS_MSEC, sec * 1000)
             ret, frame = temp_vid.read()
@@ -200,7 +215,18 @@ class MyVideoCapture:
             else:
                 logging.warning(f"No se pudo extraer el frame a {sec:.2f} segundos.")
             sec += rate_sec
-            sec = round(sec, 2)
+            sec = round(sec, 2)'''
+        
+        for i, idx in enumerate(indices):
+            temp_vid.set(cv2.CAP_PROP_POS_FRAMES, idx)
+            ret, frame = temp_vid.read()
+            if ret:
+                if i !=0 and i != len(indices) - 1:
+                    self.frames.append(frame)
+                if i < 5 or i >= len(indices) - 5:  # Solo loguear los primeros y últimos 5 para no saturar
+                    logging.info(f"Frame {i+1}/{nft} extraído en índice {idx}.")
+            else:
+                logging.warning(f"No se pudo extraer el frame en índice {idx}.")
 
         temp_vid.release()
         logging.info(f"Total de frames extraídos: {len(self.frames)}")
@@ -220,6 +246,10 @@ class MyVideoCapture:
         
         # PIL usa MILISEGUNDOS para la duración
         duration_ms = int(duration * 1000)
+        # ✅ DURACIÓN CALCULADA PARA QUE EL GIF CUBRA TODO EL VIDEO
+        # Si extraemos N frames uniformemente de un video de T segundos,
+        # cada frame debe durar T/N segundos para que el GIF se vea a velocidad normal
+        #duration_ms = int((total_sec / nft) * 1000) if nft > 0 else 800
         
         # Guardamos el GIF con Pillow directamente
         pil_frames[0].save(
@@ -431,7 +461,20 @@ class App:
     def gifshow(self):
         if  self.is_generating_gif:
             return # Evita clicks multiples
-        
+        # Abrir diálogo modal con slider
+        dialog = FramesDialog(
+            self.window,
+            total_frames=self.vid.n_frames,
+            fps_video=self.vid.fps,
+            duration_video=self.vid.seconds
+        )
+        # si el usuario canceló, no hacemos nada
+        if dialog.result is None:
+            logging.info("Diálogo cancelado por el usuario.")
+            return
+        n_frames = dialog.result
+        logging.info(f"Usuario seleccionó {n_frames} frames para el GIF.")
+
         self.is_generating_gif = True
         self.status_var.set("Generando GIF...")
         # Pausamos la reproduccion para liberar cv2.VideoCapture
@@ -440,7 +483,10 @@ class App:
         self.btn_gif.config(state=tk.DISABLED)
 
         # Creamos y arrancamos el hilo en segundo plano.
-        self.gif_thread = threading.Thread(target=self._generate_gif_worker, daemon=True)
+        self.gif_thread = threading.Thread(
+            target=self._generate_gif_worker,
+            args=(n_frames,),
+            daemon=True)
         self.gif_thread.start()
         '''
         self.status_var.set("Generando GIF...")
@@ -448,10 +494,10 @@ class App:
         self.gif_thread.start()
         '''
 
-    def _generate_gif_worker(self):
+    def _generate_gif_worker(self, n_frames):
         """Se ejecuta en el hilo secundario."""
         try:
-            self.vid.save_gif_file(namefile=self.video_source)
+            self.vid.save_gif_file(namefile=self.video_source, nft=n_frames)
             # Programamos la actualización en el hilo principal
             self.window.after(0, lambda: self._on_gif_finished(success=True))
         except Exception as e:
