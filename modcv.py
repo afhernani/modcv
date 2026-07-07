@@ -81,6 +81,7 @@ class MyVideoCapture:
         self.frames = []
         try:
             self.set_video(video_source)
+            self.aspect_ratio = self.width / self.height if self.height > 0 else 16/9
             sec = round(self.seconds / 3 , 2)
             self.vid.set(cv2.CAP_PROP_POS_MSEC, sec*1000)
             ret, frame = self.vid.read()
@@ -301,9 +302,9 @@ class App:
         
         # Create a canvas that can fit the above video source size
         self.all_time.set(self.vid.seconds)
-        self.canvas = tk.Canvas(window, width = self.vid.width, height = self.vid.height)
-        #self.canvas.pack(fill=tk.BOTH, expand=True) # ojo aqui
-        self.canvas.pack()
+        self.canvas = tk.Canvas(window, bg='black') #, width = self.vid.width, height = self.vid.height)
+        self.canvas.pack(fill=tk.BOTH, expand=True) # ojo aqui
+        
         # Guardar el color original del canvas
         self._canvas_original_bg = self.canvas.cget('bg')
         # [DnD] Registrar el canvas como zona de drop
@@ -316,53 +317,77 @@ class App:
 
         # Frame contenedor
         self.frame = tk.Frame(self.window)
+        # pack frame #self.frame.pack(anchor=tk.CENTER, expand=TRUE, fill=tk.BOTTOM)
+        self.frame.pack(side=tk.BOTTOM, fill=tk.X)
 
         # Button that lets the user take a snapshot
         self.btn_snapshot=tk.Button(self.frame, text="Snapshot", command=self.snapshot)
-        self.btn_snapshot.pack(side=tk.LEFT) #anchor=tkinter.CENTER, expand=True)
+        self.btn_snapshot.pack(side=tk.LEFT, anchor=tk.CENTER) #anchor=tkinter.CENTER, expand=True)
 
         # Button that lets us to create a gif file.
         self.btn_gif=tk.Button(self.frame, text="Gif", command=self.gifshow)
-        self.btn_gif.pack(side=tk.LEFT)
+        self.btn_gif.pack(side=tk.LEFT, anchor=tk.CENTER)
         # stop button
         self.btn_stop = tk.Button(self.frame, text='II', command=self.stopshow)
-        self.btn_stop.pack(side=tk.LEFT)
+        self.btn_stop.pack(side=tk.LEFT, anchor=tk.CENTER)
 
         # slider.
-        options={'tickinterval': 0 , 'showvalue': True, 'resolution':0.1}
+        options={'tickinterval': 0 , 
+                 'showvalue': True, 
+                 'resolution':0.1,
+                 'font': ('Segoe UI', 6), 
+                 'width': 6, 
+                 'sliderlength': 20 }
+        
         self.slider = tk.Scale(self.frame, from_=0,
                                 to=self.all_time.get(), 
                                 orient='horizontal',
                                 command=self.slider_changed,
                                 variable=self.v_time,
+                                # height=20,
                                 **options
-                                 )
-        self.slider.pack(side=LEFT, expand=True, fill=tk.BOTH)
+                                )
+        self.slider.pack(side=LEFT, expand=True, fill=tk.BOTH, anchor=tk.CENTER, padx=10)  # fill=tk.BOTH, padx=5, pady=5)
 
         # Button that let us to open another video file.
         self.btn_open=tk.Button(self.frame, text="Open", command=self.openshow)
-        self.btn_open.pack(side=tk.RIGHT)
+        self.btn_open.pack(side=tk.RIGHT, anchor=tk.CENTER)
         # Etiqueta time
         self.lb_time =tk.Label(self.frame, text="...", width=8)
-        self.lb_time.pack(side=tk.RIGHT)
+        self.lb_time.pack(side=tk.RIGHT, anchor=tk.CENTER)
 
-        # pack frame
-        self.frame.pack(anchor=tk.CENTER, expand=TRUE, fill=tk.BOTH)
+        self.status_var = tk.StringVar(value="Listo")
+        self.status_label = tk.Label(self.frame, textvariable=self.status_var, fg="gray")
+        self.status_label.pack(side=tk.RIGHT, padx=10, anchor=tk.CENTER)
+        
+        #ventana no redimensionable -tamaño fijos del video
+        #self.window.resizable(False,False)
+
+        # CALCULAR TAMAÑO INICIAL: video + controles
+        self.window.update_idletasks()  # Forzar cálculo de tamaños de widgets
+        self.controls_height = self.frame.winfo_reqheight()  # Altura real de los controles
+        initial_width = int(self.vid.width)
+        initial_height = int(self.vid.height) + self.controls_height + 10
+
+        # Tamaño mínimo razonable
+        self.window.minsize(400, 300 + self.controls_height)
+        
+        # Aplicar tamaño inicial
+        self.window.geometry(f"{initial_width}x{initial_height}")
+
+        # VARIABLES PARA EL ESCALADO
+        self._last_canvas_size = (0, 0)
+        self._scaled_size = (int(self.vid.width), int(self.vid.height))
 
         # After it is called once, the update method will be automatically called every delay milliseconds
-        logging.info(f"fps: {self.vid.fps}")
         self.window.bind('<Configure>', self.handle_resize)
-        # Calculamos el delay basado en los FPS reales del video
-        # Fórmula: delay_ms = 1000 / fps
+        # Calculamos el delay basado en los FPS reales del video # Fórmula: delay_ms = 1000 / fps
         self.delay = max(1, int(1000 / self.vid.fps))
         logging.info(f"Video FPS: {self.vid.fps}, Calculated delay: {self.delay}ms")
 
         # Añade esto al final:
         self.gif_thread = None
         self.is_generating_gif = False
-        self.status_var = tk.StringVar(value="Listo")
-        self.status_label = tk.Label(self.frame, textvariable=self.status_var, fg="gray")
-        self.status_label.pack(side=tk.RIGHT, padx=10)
 
         self.update()
         if run_mainloop:
@@ -403,10 +428,35 @@ class App:
         except Exception as e:
             logging.error(f"No se pudo crear el icono por defecto: {e}")
 
-    def handle_resize(self, ev):
+    def handle_resize(self, event):
+        """Maneja el evento de redimensionamiento de la ventana."""
         logging.info(f"resize: {self.window.geometry()}")
         logging.info(f"canvas: {self.canvas.winfo_height()}, {self.canvas.winfo_width()}")
         logging.info(f"frame: {self.frame.winfo_height()}, {self.frame.winfo_width()}")
+        #solo reacciona a cambios del canvas
+        if event.widget != self.canvas:
+            return
+        
+        canvas_w = self.canvas.winfo_width()
+        canvas_h = self.canvas.winfo_height()
+        # Evitar recálculos si el tamaño o cambió
+        if (canvas_w, canvas_h) == self._last_canvas_size:
+            return
+        self._last_canvas_size = (canvas_w, canvas_h)
+        # Calculamos el tamaño manteniendo el aspecto o ratio.
+        video_aspect = self.vid.aspect_ratio
+        canvas_aspect = canvas_w / canvas_h if canvas_h > 0 else 1
+
+        if canvas_aspect > video_aspect:
+            # Canvas es más ancho que el video, limitamos por altura
+            new_h = canvas_h
+            new_w = int(new_h * video_aspect)
+        else:
+            # Canvas es más alto que el video, limitamos por ancho
+            new_w = canvas_w
+            new_h = int(new_w / video_aspect)
+        self._scaled_size = (max(1, new_w), max(1, new_h))  # Evitar dimensiones <= 0
+        logging.info(f"Redimensionando Canvas: {canvas_w}x{canvas_h}, Video: {new_w}x{new_h}, Aspect ratio: {video_aspect:.2f}")
 
     def slider_changed(self, value):
         logging.info(f'time: {str(self.v_time.get())}, value: {value}')
@@ -526,6 +576,43 @@ class App:
     def _generate_gif(self):
         self.vid.save_gif_file(namefile=self.video_source)
 
+    def _load_video(self, filepath):
+        """cargar archivo de imagen"""
+        if not filepath or not os.path.exists(filepath):
+            return
+        valid_ext = ('.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v')
+        if not filepath.lower().endswith(valid_ext):
+            showerror("Error", "Formato no soportado. Arrastra un archivo de video válido.")
+            return
+            
+        logging.info(f"_load_viedeo: cargando video: {filepath}")
+        self.vid.release()
+        guardar_config(os.path.dirname(filepath))
+        self.video_source = filepath
+        try:
+            self.vid = MyVideoCapture(self.video_source)
+        except ValueError as e:
+            showerror("Error", str(e))
+            return
+
+        # AJUSTAR CANVAS Y VENTANA AL NUEVO VIDEO
+        self.canvas.configure(width=self.vid.width, height=self.vid.height)
+        self.all_time.set(self.vid.seconds)
+        self.slider.configure(to=self.all_time.get())
+        self.delay = max(1, int(1000 / self.vid.fps))
+        logging.info(f"new fps: {self.vid.fps}, delay: {self.delay}")
+        self.v_time.set(0)
+        self.stop = False
+        self.btn_stop['text'] = 'II'
+        
+        # RECALCULAR TAMAÑO DE LA VENTANA
+        self.window.title(f"{self.window_title} - {os.path.basename(filepath)}")
+        self.window.update_idletasks()
+        controls_height = self.frame.winfo_reqheight()
+        new_width = int(self.vid.width)
+        new_height = int(self.vid.height) + controls_height + 10
+        self.window.geometry(f"{new_width}x{new_height}")
+
     def openshow(self):
         filetypes = (
             ('text files', '*.mp4 *.avi *.mkv'),
@@ -538,22 +625,9 @@ class App:
                         filetypes = filetypes
                         )
         if filename:
+            self._load_video(filename)
             logging.info(f"open file: {filename}")
-            # liberamos los recursos del video actual
-            self.vid.release()
-
-            guardar_config(os.path.dirname(filename))
-
-            self.video_source = filename
-            self.vid = MyVideoCapture(self.video_source)
-
-            # self.vid.set_only_video()
-            self.canvas.configure(width=self.vid.width, height=self.vid.height)
-            self.all_time.set(self.vid.seconds)
-            self.slider.configure(to=self.all_time.get())
-            # Actualizar el dalay basando en los nuevos fps del video abierto.
-            self.delay = max(1, int(1000 / self.vid.fps))
-            logging.info(f"new fps: {self.vid.fps}, delay: {self.delay}")
+            
 
     def update(self):
         """Método de actualizacion con sincronizacion precisa de fps del video."""
@@ -565,9 +639,7 @@ class App:
             self.v_time.set(round((self.vid.poss / 1000), 3)) 
             # Formato de tiempo mejorado (MM:SS)
             current_sec = int(self.v_time.get())
-            minutes = current_sec // 60
-            seconds = current_sec % 60
-            self.lb_time['text'] = f"{minutes:02d}:{seconds:02d}"
+            self.lb_time['text'] = f"{current_sec // 60:02d}:{current_sec % 60:02d}"
 
         except Exception as e:
             logging.debug(f"App update error: {e}")
@@ -575,19 +647,33 @@ class App:
             return
 
         if ret:
-            self.photo = ImageTk.PhotoImage(image = Image.fromarray(frame))
-            self.canvas.create_image(0, 0, image = self.photo, anchor = tk.NW)
+            # ESCALAR EL FRAME AL TAMAÑO CALCULADO
+            target_w, target_h = self._scaled_size
+            pil_img = Image.fromarray(frame)
+            
+            # Solo redimensionar si cambió el tamaño objetivo (optimización)
+            if pil_img.size != (target_w, target_h):
+                pil_img = pil_img.resize((target_w, target_h), Image.Resampling.BILINEAR)
+            
+            self.photo = ImageTk.PhotoImage(image=pil_img)
+            #self.photo = ImageTk.PhotoImage(image = Image.fromarray(frame))
+            #CENTRAR EL VIDEO EN EL CANVAS
+            canvas_w = self.canvas.winfo_width()
+            canvas_h = self.canvas.winfo_height()
+            x = (canvas_w - target_w) // 2
+            y = (canvas_h - target_h) // 2
+            
+            self.canvas.delete("all")  # Limpiar para evitar "fantasmas"
+            self.canvas.create_image(x, y, image=self.photo, anchor=tk.NW)
+            # self.canvas.create_image(0, 0, image = self.photo, anchor = tk.NW)
 
         if self.stop:
             # salimos del loop
             return
         # Calculamos cuánto tiempo tomó procesar este frame
-        processing_time = time.time() - start_time
-        processing_time_ms = processing_time * 1000
-        
+        processing_time_ms = (time.time() - start_time) * 1000
         # Ajustamos el delay restando el tiempo de procesamiento
-        adjusted_delay = max(1, self.delay - processing_time_ms)
-        
+        adjusted_delay = max(1, self.delay - processing_time_ms)  
         # Programamos el siguiente frame
         self.window.after(int(adjusted_delay), self.update)
 
@@ -640,47 +726,8 @@ class App:
             return
         
         # Abrir el video
-        self._open_video_file(file_path)
+        self._load_video(file_path)
 
-    def _open_video_file(self, filename):
-        """Abre un archivo de video (lógica compartida entre openshow y DnD)."""
-        if not filename or not os.path.isfile(filename):
-            return False
-        
-        try:
-            logging.info(f"Abriendo archivo: {filename}")
-            # Liberar recursos del video actual
-            self.vid.release()
-            guardar_config(os.path.dirname(filename))
-            self.video_source = filename
-            self.vid = MyVideoCapture(self.video_source)
-            
-            # Actualizar canvas
-            self.canvas.configure(width=self.vid.width, height=self.vid.height)
-            self.all_time.set(self.vid.seconds)
-            self.slider.configure(to=self.all_time.get())
-            self.v_time.set(0)
-            
-            # Actualizar delay
-            self.delay = max(1, int(1000 / self.vid.fps))
-            logging.info(f"Nuevo video: {self.vid.fps} fps, delay: {self.delay}ms")
-            
-            # Reanudar reproducción
-            #self.btn_stop['text'] = 'II'
-            #self.stop = False
-            
-            #self.status_var.set(f"> {os.path.basename(filename)}")
-            #self.status_var.set(f">>")
-            self.window.title(f"{self.window_title} - {os.path.basename(filename)}")
-            
-            # Reiniciar el loop de actualización
-            #self.window.after(self.delay, self.update)
-            return True
-        except Exception as e:
-            logging.error(f"Error al abrir video: {e}")
-            showerror("Error", f"No se pudo abrir el video:\n{filename}\n\n{e}")
-            self.status_var.set("Error al abrir video")
-            return False
     # =======================================================================
 
 
